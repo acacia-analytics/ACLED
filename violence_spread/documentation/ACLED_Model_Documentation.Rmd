@@ -1,0 +1,158 @@
+---
+title: "ACLED VEO Model Documentation"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    css: "acled_style.css"
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE)
+
+library(glue)
+library(tidyverse)
+library(mapview)
+# library(ggplotly)
+setwd("~/Documents/AFRICOM/acled/")
+
+load(file = "acled_cleaned.RData")
+load("R_Data_Files/Africa_Wide_VEO_Step_3.RData")
+
+# grids_list$Date <- zoo::as.yearmon(paste(grids_list$year, grids_list$month), "%Y %m")
+
+# grids_list_ts <- grids_list %>% 
+#    as.data.frame() %>% 
+#    group_by(Date) %>% 
+#    summarize(veo_events = sum(n_colli))
+```
+
+## Spatio-Temporal Modeling of VEO Activities in Africa
+
+This analysis uses ACLED data between January 1, 2010 and July 30, 2021. ACLED contains a large volume of data on violent events, protests, and conflicts around the world. For this analysis, we focus specifically on violent events in Africa that cause one or more deaths, that are perpetrated by Violent Extremist Organizations (VEOs). There are 18,645 of these events in the time period. The below map shows a sample of these occurrences.  
+
+```{r VEO_Point_Map, echo = FALSE, out.width="100%"}
+VEO_Events <- df_sf %>% 
+  filter(fatalities > 0) %>% 
+  sample_n(size = 1000) %>% 
+  select(event_date, event_type, actor1, actor2, fatalities)
+
+mapView(VEO_Events, label = NA, layer.name = 'VEO Events')
+```
+
+We can see big clusters in West Africa, Libya, Algeria, East Africa, and Mozambique. 
+
+For statistical analysis, it is easier to summarize this data up to the regional administrative level. Different countries use different names for these regions, but typically these would be provinces or states. I refer to them as provinces in the rest of the document. The below map shows this summarized data.  
+
+```{r VEO_Provinces_Map, echo = FALSE, out.width="100%"}
+mapView(africa, zcol = "veo_events", layer.name = 'VEO Events')
+```
+
+Once again we see big clusters, with only a select number of provinces showing large amounts of VEO activity. Around these clusters we also see provinces with a smaller amount of VEO activity. The majority of provinces in Africa show no VEO activity.
+
+We can also look at the temporal change in the amount of VEO activity. 
+
+```{r VEO_Over_Time, echo = FALSE, out.width="100%"}
+africa
+g_ts <- grids_list_ts %>% 
+   ggplot(aes(x = Date, y = veo_events)) + 
+   geom_line() + 
+   stat_smooth(method = "loess", formula = y ~ x, linewidth = 1) + 
+  xlab("Number of Violent Events")
+# To be converted to plotly once I have internet that can install packages
+g_ts
+
+```
+
+This shows a steady increase prior to 2017, then a huge rise between 2017 and 2020. Finally the data also shows a a large decline that brings the number of violent events lower than the peak, but still elevated.
+
+### Modeling the data 
+
+The above graphs show that the data shows substantial changes across space and time. To properly account for these distributions, we will need to implement *spatio-temporal modeling*. This is a class of statistical methods designed to account for the space and time relationships within the data. The next thing we should consider here is what type of outcome we are trying to model. In each section I will walk through a component we should deal with: 
+
+#### Predictive Modeling
+Our main interest is in predicting the spread of the VEO events in the future. Many spatial models focus on interpolation over time and space. Examples of these models are krieging, which seeks to fill in missing data to display data over an area (think of a weather map showing temperature across the U.S. - temperature is really only observed at specific weather stations. By combining and interpolating the data we can get a smooth map of where the weather is at each point). This is its own class of statistical methods, but we will need a model that can look ahead to the future to make predictions. The typical way to model this in statistics is with an *autoregressive* model. An autoregressive model estimates how data is correlated across time. Here I will make predictions for one year out. 
+
+#### Count Data 
+The measure I am going to focus on is the number of events causing fatalities in each province. We could also look at the number of fatalities itself, but this could make modeling harder because a few events could result in a large number of deaths, leading to a highly skewed distribution. Either way, we are more interested in the geographical spread of the groups, so to keep the data less highly skewed, it should not hurt to model the number of events instead of number of fatalities. 
+
+If we look at the number of events per province, we see that this data is definitely not normally distributed. 
+
+There are two distributions that are useful here, the negative binomial and the Poisson distribution. The Poisson distribution is commonly used to model count data that arrives in independent identically distributed intervals. The negative binomial models the summation of multiple yes/no trials. 
+
+The negative binomial is a more general form of the Poisson distribution. Most significantly, a Poisson distribution assumes that the mean and the variance in the data are equal to one another, while the negative binomial distribution allows the variance to be greater. When the variance of the data is greater than the mean, we call this *overdispersion*. We will fit a model based on the negative binomial distribution to our data. The model will also provide a test for overdispersion to verify that our assumption is correct.   
+
+```{r VEO_Histogram, fig.show="hold", echo = FALSE, out.width="50%"}
+par(mar = c(4, 4, .1, .1))
+
+grids_list %>% as.data.frame() %>% ggplot(aes(x = n_colli))  + geom_histogram()
+grids_list %>% as.data.frame() %>% filter(n_colli != 0) %>% ggplot(aes(x = n_colli))  + geom_histogram()
+
+```
+
+#### Zero-Inflated Data 
+As noted earlier, there are a lot of provinces that have zero violent events. It is difficult for a negative binomial or a poisson distribution by itself to model data with such a high number of zero observations. There are zero-inflated models that can handle this sort of data. However, in this case I think we can reasonably expect there not to be a huge expansion of violent events into an area that has never experienced any violence before, given that we are only forecasting up to one year out. So we can exclude most of these provinces that have no history of VEO activity. I do include provinces with no VEO activity that border provinces with VEO activity, since violence could spread into those areas.  
+
+```{r VEO_Borders_Map, echo = FALSE, out.width="100%"}
+mapView(west_africa_veo, zcol = "veo_events", layer.name = 'VEO Events')
+```
+
+### Clusters 
+Looking back at the map, we see that there are clusters of violence, while most locations in Africa do not have any VEO activity. These clusters are often spatially far apart from one another. Given the distances, it would be hard to model the spatial interaction between these disparate locations. Some locations also experience a start in VEO activity much earlier or later than other locations. There are also big cultural, ecological, and social differences between the different locations that are going to be hard to model. Because of this, I consider each of these locations to be a separate problem to model. In particular, I break it into an analysis of VEO activity around Burkina Faso, Mali, Algeria, Mozambique, Somalia, Libya. There are also some points that are outliers, which I exclude. These clusters are plotted below. I use the OPTICS clustering algorithm to confirm that these clusters make sense 
+
+For two clusters, if we look at the time series for each cluster, violence seems to have mostly petered out. Violence in Libya was high between . Since most of these values are now around zero, it is harder to forecast much from them, and I exclude them. 
+
+### Covariates 
+Other factors beyond autocorrelation in space and time can impact our data. We gather these covariates to also help predict whether violence will be located in a particular area. Note that these measures are not collected regularly, so they do not vary over time, only over the province level.   
+
+#### Population, Population Density, and Youth Population 
+The United Nations Population Fund surveyed subnational population data in 2014. This gives us population figures for each country by province. 
+
+In sociology, there is a theory that a higher young male population can create political instability and violence (known as "Youth Bulge" theory). Some of this data needs to be estimated because there is not always an estimate of the number of young males in a specific province. There is typically one of these estimates at the subnational level, and I combine the overall proportion of the population that is male or young to get a best estimate of the specific value. 
+
+```{r Population, echo = FALSE, out.width="100%"}
+mapView(africa, z = "T_TL") 
+```
+
+```{r Population_Youth, echo = FALSE, out.width="100%"}
+mapView(africa, z = "P_M_15_29") 
+```
+
+
+#### Poverty
+The Oxford Poverty and Human Development Initiative provides data on poverty at the sub-national level. This tells us the estimated percent of the population living in poverty in each province. 
+
+```{r Poverty_Map, echo = FALSE, out.width="100%"}
+load("africa_poverty.RData")
+africa_poverty$africa_poverty <- round(africa_poverty$Province_MPI, 2)
+mapView(africa_poverty, z = "Province_MPI") 
+```
+
+The data set does not cover every country. Some countries do not map well to. Because they did not have VEO activity anyway, they were also excluded on this mpa. Some areas, like Somalia are country-wide estimates, because subnational estimates are not available. Despite these limitations, we can see clear differences between regions at a more detailed level than purely national data would portray. 
+
+### The Model 
+We use the R package *surveillance* to fit our spatio-temporal model. The model 
+
+In particular, we use a negative binomial model. The equations for this model are: 
+
+$$ \mu_{it} = e_{it}\nu_{it} + \lambda_{it}Y_{i,t-1} + \phi_{i,t} \sum_{j \neq i}w_{ji}Y_{j,t-1} $$
+$$ log(\nu_t) = \alpha^{\nu} + \beta_tt + \gamma sin(\omega t) + \delta cos(\omega t) $$
+
+$$ Var(Y_{i,t}) = \mu_{it}(1 + \psi_{i}\mu_{it}) $$
+Where $u_it$ is the estimated mean number of VEO events at location $i$ and time $t$. $\nu_t$ models the overall trend and $w_ji$ is the spatial weights matrix between location i and location j. 
+
+We estimate parameters 
+
+Surveillance solves this problem using a Bayesian Sampling Algorithm. 
+
+### Forecasting  
+
+Forecasts are made by simulating from the model's predictive distribution. 
+
+
+
+
+
+
+
+
