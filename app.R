@@ -68,7 +68,7 @@ contagion <- contagion[order(contagion$country), ]
 # Set the values for the dropdown as a named list.  The country will appear in the dropdown but the iso code wil be used as the filter
 contagionDropdown <- setNames(as.list(contagion$iso3), as.list(contagion$country))
 
-# Remove the veo data and the query
+# Remove the contagion data and the query
 rm(contagion, contagion_query)
 
 ##### Data for the violence analysis
@@ -118,9 +118,40 @@ demPeriodDropdown <- setNames(demperiod2, demperiod1)
 # Remove the period data
 rm(demperiod1, demperiod2)
 
+#####
+region1 <- c('African Union', 'Africa Command', 'United Nations')
+region2 <- c('au_region', 'ac_region', 'un_region')
+regionGroupDropdown <- setNames(region2, region1)
+
+# Time frame
+period1 <- c('Daily', 'Weekly', 'Monthly', 'Quarterly', 'Yearly')
+period2 <- c('day', 'week', 'month', 'quarter', 'year')
+periodDropdown <- setNames(period2, period1)
+
+# Remove the period data
+rm(period1, period2)
+
+# Set query for all African Countries in the dataset
+start_region_query <- "SELECT DISTINCT au_region FROM iso.region ORDER BY au_region;"
+
+# Extract country names and iso codes from database
+start_region <- DBI::dbGetQuery(con, start_region_query)
+
+# Set the values for the dropdown as a named list.  The country will appear in the dropdown but the iso code wil be used as the filter
+# This isn't used in this workbook but will be used in the app
+startRegionDropdown <- as.list(start_region)
+# Remove the veo data and the query
+rm(start_region, start_region_query)
+
 ##### This is the user interface for the dashboard
 # Define UI for application
 ui <- bootstrapPage(
+  
+  tags$head(
+    tags$style(HTML("
+      .bar-label {width: 200px; white-space: normal; text-align: left;}
+    "))
+  ),
   
   navbarPage("ACLED",
   
@@ -128,20 +159,36 @@ ui <- bootstrapPage(
     windowTitle = "ACLED",
     
     tabPanel("VEO Centriod",
-        div(class="outer",
-            tags$head(includeCSS("styles.css")),
-      
-            leafletOutput("map", width="100%", height="95vh"),
-        
-            # Sidebar with a slider input for number of bins 
-            absolutePanel(id = "controls", class = "panel panel-default",
-                          top = 75, right = 55, width = 250, fixed=TRUE,
-                          draggable = TRUE, height = "auto",
-                          tags$br(),
-                          tags$h3("Select Country"),
-                          selectInput("veoSelector", "", veoDropdown),
-                          uiOutput("sliderUI")
-            )
+        # div(class="outer",
+        #     tags$head(includeCSS("styles.css")),
+        # 
+        #     leafletOutput("map", width="100%", height="95vh"),
+        # 
+        #     # Sidebar with a slider input for number of bins 
+        #     absolutePanel(id = "controls", class = "panel panel-default",
+        #                   top = 75, right = 55, width = 250, fixed=TRUE,
+        #                   draggable = TRUE, height = "auto",
+        #                   tags$br(),
+        #                   tags$h3("Select Country"),
+        #                   selectInput("veoSelector", "", veoDropdown),
+        #                   uiOutput("sliderUI")
+        #     )
+        # )
+        sidebarLayout(
+          sidebarPanel(
+            
+            selectInput("veoSelector", "Select Country:",
+                        choices = veoDropdown,
+                        multiple = FALSE),
+            
+            uiOutput("sliderUI")
+          ),
+          
+          mainPanel(
+            leafletOutput("map", width="100%", height="45vh"),
+            tags$br(),
+            leafletOutput("cumulativeVeoMap", width="100%", height="45vh"),
+          )
         )
     ),
     
@@ -165,58 +212,251 @@ ui <- bootstrapPage(
              
     ),
     
-    tabPanel("Violence by Country",
-             
-             sidebarLayout(
-               sidebarPanel(
-                 
-                 selectInput("violenceSelector", "Country:",
-                             choices = violenceDropdown,
-                             # selected = c("GHA"),
-                             multiple = FALSE),
-                 
-                 uiOutput("dateTimeUI"),
-                 
-                 selectInput("periodSelector", "Time Period:",
-                             choices = periodDropdown,
-                             selected = 'year',
-                             multiple = FALSE),
-                 
-                 highchartOutput("violenceCountGraph"),
-                 highchartOutput("violenceFatalGraph")
-               ),
+    navbarMenu("Violence",
                
-               mainPanel(
-                 leafletOutput("violenceMap", width="100%", height="95vh")
-               )
-             )
-             
+        tabPanel("Violence by Country",
+                 
+                 sidebarLayout(
+                   sidebarPanel(
+                     
+                     selectInput("violenceSelector", "Country:",
+                                 choices = violenceDropdown,
+                                 # selected = c("GHA"),
+                                 multiple = FALSE),
+                     
+                     uiOutput("dateTimeUI"),
+                     
+                     selectInput("periodSelector", "Time Period:",
+                                 choices = periodDropdown,
+                                 selected = 'year',
+                                 multiple = FALSE),
+                     
+                     highchartOutput("violenceCountGraph"),
+                     highchartOutput("violenceFatalGraph")
+                   ),
+                   
+                   mainPanel(
+                     leafletOutput("violenceMap", width="100%", height="95vh")
+                   )
+                 )
+                 
+        ),
+        
+        tabPanel("Violence by Region",
+                 
+                 tags$head(
+                   tags$style("
+                            .input-daterange input {
+                                min-height: 34px;
+                            }
+                          ")
+                 ),
+                 
+                 fixedRow(
+                   column(12, wellPanel(
+                     fixedRow(
+                       column(6,
+                              selectInput("vioRegionGroupSelector", "Region Group:",
+                                          choices = regionGroupDropdown,
+                                          multiple = FALSE)
+                       ),
+                       column(6,
+                              selectInput("vioRegionSelector", "Region:",
+                                          choices = startRegionDropdown,
+                                          multiple = FALSE)
+                       )
+                     ),
+                     fixedRow(
+                       column(6,
+                              selectInput("vioRegionPeriodSelector", "Time Period:",
+                                          choices = periodDropdown,
+                                          selected = 'year',
+                                          multiple = FALSE)
+                       ),
+                       column(6,
+                              uiOutput("vioRegionDateTimeUI")
+                       )
+                     )
+                   ))
+                 ),
+                 
+                 fixedRow(style = "background-color:#FFFFFF; padding-top: 5%; padding-bottom: 5%",
+                          column(12,
+                                 fixedRow(
+                                   column(12, tags$h1('Overall Violence', style='padding-bottom: 2%;'))
+                                 )
+                          ),
+                          column(12,
+                                 fixedRow(
+                                   column(6,
+                                          highchartOutput("vioRegionTimeCount", height=500),
+                                          highchartOutput("vioRegionTypeCount", height=400)
+                                   ),
+                                   column(6, 
+                                          highchartOutput("vioRegionMap", height=900)
+                                   )
+                                 )
+                          )
+                 ),
+                 
+                 fixedRow(style = "background-color:#f9f9f9; padding-top: 5%; padding-bottom: 5%",
+                          column(12,
+                                 fixedRow(
+                                   column(12, tags$h1('VEO Violence', style='padding-bottom: 2%;'))
+                                 )
+                          ),
+                          column(12,
+                                 fixedRow(
+                                   column(6, 
+                                          highchartOutput("vioRegionVeoMap", height=900)
+                                   ),
+                                   column(6,
+                                          highchartOutput("vioRegionVeoTimeCount", height=500),
+                                          highchartOutput("vioRegionVeoTypeCount", height=400)
+                                   )
+                                 )
+                          )
+                 )
+        )
     ),
+    navbarMenu("Demonstrations",
     
-    tabPanel("Demonstrations by Country",
-             
-             sidebarLayout(
-               sidebarPanel(
+        tabPanel("Demonstrations by Country",
                  
-                 selectInput("demSelector", "Country:",
-                             choices = demDropdown,
-                             multiple = FALSE),
+                 sidebarLayout(
+                   sidebarPanel(
+                     
+                     selectInput("demSelector", "Country:",
+                                 choices = demDropdown,
+                                 multiple = FALSE),
+                     
+                     uiOutput("demDateTimeUI"),
+                     
+                     selectInput("demPeriodSelector", "Time Period:",
+                                 choices = demPeriodDropdown,
+                                 selected = 'year',
+                                 multiple = FALSE),
+                     
+                     highchartOutput("protestCountGraph"),
+                     highchartOutput("riotCountGraph")
+                   ),
+                   
+                   mainPanel(
+                     leafletOutput("demonstrationMap", width="100%", height="95vh")
+                   )
+                 )
+        ),
+        tabPanel("Demonstrations by Region",
                  
-                 uiOutput("demDateTimeUI"),
+                 tags$head(
+                   tags$style("
+                            .input-daterange input {
+                                min-height: 34px;
+                            }
+                          ")
+                 ),
                  
-                 selectInput("demPeriodSelector", "Time Period:",
-                             choices = demPeriodDropdown,
-                             selected = 'year',
-                             multiple = FALSE),
+                 fixedRow(
+                   column(12, wellPanel(
+                     fixedRow(
+                       column(6,
+                              selectInput("demRegionGroupSelector", "Region Group:",
+                                          choices = regionGroupDropdown,
+                                          multiple = FALSE)
+                       ),
+                       column(6,
+                              selectInput("demRegionSelector", "Region:",
+                                          choices = startRegionDropdown,
+                                          multiple = FALSE)
+                       )
+                     ),
+                     fixedRow(
+                       column(6,
+                              selectInput("demRegionPeriodSelector", "Time Period:",
+                                          choices = periodDropdown,
+                                          selected = 'year',
+                                          multiple = FALSE)
+                       ),
+                       column(6,
+                              uiOutput("demRegionDateTimeUI")
+                       )
+                     )
+                   ))
+                 ),
                  
-                 highchartOutput("protestCountGraph"),
-                 highchartOutput("riotCountGraph")
-               ),
-               
-               mainPanel(
-                 leafletOutput("demonstrationMap", width="100%", height="95vh")
-               )
-             )
+                 fixedRow(style = "background-color:#FFFFFF; padding-top: 5%; padding-bottom: 5%",
+                          column(12,
+                                 fixedRow(
+                                   column(12, tags$h1('Demonstrations', style='padding-bottom: 2%;'))
+                                 )
+                          ),
+                          column(12,
+                                 fixedRow(
+                                   column(6,
+                                          highchartOutput("demRegionTimeCount", height=500),
+                                          highchartOutput("demRegionTypeCount", height=400)
+                                   ),
+                                   column(6, 
+                                          highchartOutput("demRegionMap", height=900)
+                                   )
+                                 )
+                          )
+                 ),
+                 
+                 fixedRow(style = "background-color:#f9f9f9; padding-top: 5%; padding-bottom: 5%",
+                          column(12,
+                                 fixedRow(
+                                   column(12, tags$h1('Protests', style='padding-bottom: 2%;'))
+                                 )
+                          ),
+                          column(12,
+                                 fixedRow(
+                                   column(6, 
+                                          highchartOutput("protestRegionTypeCount", height=450)
+                                   ),
+                                   column(6,
+                                          highchartOutput("protestRegionFatalPercent", height=450)
+                                   )
+                                 ),
+                                 tags$br(),
+                                 fixedRow(
+                                   column(6,
+                                          highchartOutput("protestRegionTimeCount", height=450),
+                                   ),
+                                   column(6,
+                                          highchartOutput("protestRegionFatalCount", height=450)
+                                   )
+                                 )
+                          )
+                 ),
+                 
+                 fixedRow(style = "background-color:#FFFFFF; padding-top: 5%; padding-bottom: 5%",
+                          column(12,
+                                 fixedRow(
+                                   column(12, tags$h1('Riots', style='padding-bottom: 2%;'))
+                                 )
+                          ),
+                          column(12,
+                                 fixedRow(
+                                   column(6, 
+                                          highchartOutput("riotRegionTypeCount", height=450)
+                                   ),
+                                   column(6,
+                                          highchartOutput("riotRegionFatalPercent", height=450)
+                                   )
+                                 ),
+                                 tags$br(),
+                                 fixedRow(
+                                   column(6,
+                                          highchartOutput("riotRegionTimeCount", height=450)
+                                   ),
+                                   column(6,
+                                          highchartOutput("riotRegionFatalCount", height=450)
+                                   )
+                                 )
+                          )
+                 )
+        )
     )
   )
 )
@@ -239,6 +479,9 @@ server <- function(input, output, session) {
       output <- output %>%
         group_by(year, week) %>%
         summarize(lat = mean(latitude), lon = mean(longitude), count = n(), fatalities = sum(fatalities))
+      
+      output$cum_x = cummean(output$lon)
+      output$cum_y = cummean(output$lat)
       
       output
     })
@@ -275,7 +518,7 @@ server <- function(input, output, session) {
     output$map <- renderLeaflet({
         leaflet(options=leafletOptions(scrollWheelZoom=FALSE)) %>%
             addProviderTiles(providers$CartoDB.Positron) %>%
-            setView(lng = st_coordinates(ce1())[1, 1], lat = st_coordinates(ce1())[1, 2], zoom = 6)
+            setView(lng = st_coordinates(ce1())[1, 1], lat = st_coordinates(ce1())[1, 2], zoom = 5)
     })
     
     observe({
@@ -289,6 +532,26 @@ server <- function(input, output, session) {
                                         color='red',
                                         radius= log(veoMapData$count) * 2)
         
+    })
+    
+    output$cumulativeVeoMap <- renderLeaflet({
+      leaflet(options=leafletOptions(scrollWheelZoom=FALSE)) %>%
+        addProviderTiles(providers$CartoDB.Positron) %>%
+        setView(lng = st_coordinates(ce1())[1, 1], lat = st_coordinates(ce1())[1, 2], zoom = 5) %>%
+        clearMarkers()
+    })
+    
+    observe({
+      veoCumMapData <- filteredVeoData()
+      
+      leafletProxy("cumulativeVeoMap", data = veoCumMapData) %>%
+        # clearMarkers() %>%
+        addCircleMarkers(data=veoCumMapData,
+                         lat = veoCumMapData$cum_y,
+                         lng = veoCumMapData$cum_x,
+                         color='black',
+                         radius = 1)
+      
     })
     
 ##### Contagion Data
@@ -843,6 +1106,851 @@ server <- function(input, output, session) {
                          color='rgba(255, 0, 0, 0.2)',
                          radius=0)
     })
+    
+#####
+# Violence by Region
+    # Populate the region dropdown based on the value of the group dropdown
+    vioRegionDDData <- reactive({
+      req(input$vioRegionGroupSelector)
+      
+      regionGroupQuery <- sqlInterpolate(ANSI(),
+                                         "SELECT DISTINCT ?params FROM iso.region ORDER BY ?params;",
+                                         params = SQL(input$vioRegionGroupSelector)
+      )
+      
+      df <- DBI::dbGetQuery(con, regionGroupQuery)
+      
+      df <- as.data.frame(df)
+      
+      df[1]
+    })
+    
+    # Use the output from the previous step to update the region selectInput
+    observe({
+      
+      x <- vioRegionDDData()
+      
+      updateSelectInput(session, "vioRegionSelector",
+                        label = "Region:",
+                        choices = x
+      )
+    })
+    
+    # Use the group and region dropdown values to extract data from the database
+    vioRegionDf <- reactive({
+      req(input$vioRegionSelector)
+      
+      vioRegionQuery <- sqlInterpolate(ANSI(),
+                                       "SELECT * FROM acled.acled_master WHERE event = 'Violent Event' AND ?cat = ?params;",
+                                       cat = SQL(input$vioRegionGroupSelector),
+                                       params = dbQuoteString(ANSI(), input$vioRegionSelector)
+      )
+      
+      df <- DBI::dbGetQuery(con, vioRegionQuery)
+      
+      df
+    })
+    
+    # Update the minimum and maximum dates for the date selector
+    observe({
+      
+      vioRegionDfMin <- min(vioRegionDf()$date, na.rm = TRUE)
+      vioRegionDfMax <- max(vioRegionDf()$date, na.rm = TRUE)
+      
+      output$vioRegionDateTimeUI <- renderUI({
+        dateRangeInput("vioRegionDaterange", "Date Range:",
+                       start = vioRegionDfMin,
+                       end = vioRegionDfMax,
+                       min = vioRegionDfMin,
+                       max = vioRegionDfMax,
+                       format = "yyyy-mm-dd",
+                       separator = " to "
+        )
+      })
+    })
+    
+    # Set the initial values for the period lengths and values for the highcharts time scale x-axis
+    vioRegionPeriodLength <- reactiveVal(1)
+    vioRegionPeriodValue <- reactiveVal('year')
+    vioRegionPeriodOther <- reactiveVal('year')
+    
+    # Set the period length for each period used in the highcharts time scale
+    observeEvent(input$vioRegionPeriodSelector, {
+      if (input$vioRegionPeriodSelector == 'day') {
+        vioRegionPeriodLength(1)
+      } else if (input$vioRegionPeriodSelector == 'week') {
+        vioRegionPeriodLength(7)
+      } else if (input$vioRegionPeriodSelector == 'month') {
+        vioRegionPeriodLength(1)
+      } else if (input$vioRegionPeriodSelector == 'quarter') {
+        vioRegionPeriodLength(3)
+      } else if (input$vioRegionPeriodSelector == 'year') {
+        vioRegionPeriodLength(1)
+      }
+    })
+    
+    # Sets the period value based on the dropdown selection
+    observeEvent(input$vioRegionPeriodSelector, {
+      vioRegionPeriodValue(input$vioRegionPeriodSelector)
+    })
+    
+    # Changes the period value to a value that can be used by highcharts
+    observeEvent(input$vioRegionPeriodSelector, {
+      if (input$vioRegionPeriodSelector == 'day') {
+        vioRegionPeriodOther('day')
+      } else if (input$vioRegionPeriodSelector == 'week') {
+        vioRegionPeriodOther('day')
+      } else if (input$vioRegionPeriodSelector == 'month') {
+        vioRegionPeriodOther('month')
+      } else if (input$vioRegionPeriodSelector == 'quarter') {
+        vioRegionPeriodOther('month')
+      } else if (input$vioRegionPeriodSelector == 'year') {
+        vioRegionPeriodOther('year')
+      }
+    })
+    
+    # Filters the data to use the period values. This changes the time period of the graphs
+    filteredVioRegionData <- reactive({
+      req(input$vioRegionDaterange)
+      
+      results <- vioRegionDf()
+      
+      # Sets a new column 'fdate' that is used to aggregate the data based on date ranges
+      results$fdate <- as.Date(floor_date(results$date, unit = vioRegionPeriodValue()))
+      
+      # Creates a new column to denote if a fatality occured at the event
+      results$fatal <- ifelse(results$fatalities > 0, 1, 0)
+      
+      # Filters the data to only include dates between the selected minimum and maximum
+      results <- results %>%
+        filter(date >= input$vioRegionDaterange[1] & date <= input$vioRegionDaterange[2])
+      
+      results
+    })
+    
+    dateRangeTitle <- reactive({
+      mnd <- input$vioRegionDaterange[1]
+      mxd <- input$vioRegionDaterange[2]
+      drt <- paste('Dates Included:', mnd, 'to', mxd)
+      drt
+    })
+    
+    ##### 
+    # Violent event Overview
+    # Original violent event data for region
+    vioRegionData <- reactive({
+      
+      data <- filteredVioRegionData() %>%
+        arrange(desc(fdate)) %>%
+        complete(fdate = seq.Date(min(as.Date(fdate), na.rm = TRUE), max(as.Date(fdate), na.rm = TRUE), by = vioRegionPeriodValue())) %>%
+        group_by(fdate, event_type) %>%
+        summarise(n = n(), fatalities = sum(fatalities), deadly = sum(fatal)) %>% 
+        mutate(nondeadly = n - deadly) %>%
+        ungroup() %>%
+        complete(fdate, event_type, fill = list(n = 0, freq = 0)) %>%
+        group_by(fdate) %>%
+        mutate(n = ifelse(is.na(n), 0, n)) %>%
+        mutate(fatalities = ifelse(is.na(fatalities), 0, fatalities)) %>%
+        mutate(deadly = ifelse(is.na(deadly), 0, deadly)) %>%
+        mutate(nondeadly = ifelse(is.na(nondeadly), 0, nondeadly)) %>%
+        drop_na()
+      
+      data
+    })
+    
+    # Time series demonstration data for region
+    # Feeds demRegionTimeCount graph
+    vioRegionTSData <- reactive({
+      
+      data <- vioRegionData() %>%
+        subset(select = c('fdate', 'event_type', 'n')) %>%
+        pivot_wider(names_from = event_type, values_from = n) %>%
+        subset(select = c('fdate', 'Battles', 'Explosions/Remote violence', 'Violence against civilians')) %>%
+        gather() %>%
+        group_by(name = key) %>%
+        do(data = .$value)
+      
+      data <- list_parse(data)
+      
+      data
+    })
+    
+    # Categorical type demonstration data for region
+    # Feeds demRegionTypeCount graph
+    vioRegionTypeData <- reactive({
+      
+      data <- vioRegionData() %>%
+        group_by(event_type) %>%
+        summarise(count = sum(n))
+      
+      data
+    })
+    
+    vioRegionMapData <- reactive({
+      data <- filteredVioRegionData() %>%
+        group_by(iso3) %>%
+        summarise(value = n())
+      
+      data
+    })
+    
+    hcoptslang <- getOption("highcharter.lang")
+    hcoptslang$thousandsSep <- ","
+    options(highcharter.lang = hcoptslang)
+    
+    getContent <- function(url) {
+      library(httr)
+      content(GET(url))
+    }
+    
+    africageojson <- getContent("https://code.highcharts.com/mapdata/custom/africa.geo.json")
+    
+    output$vioRegionMap <- renderHighchart({
+      highchart() %>%
+        hc_chart(type = "map", backgroundColor='#FFFFFF') %>%
+        hc_title(text = 'Count of Violent Events by Country', align = 'left', margin = 50) %>%
+        hc_subtitle(text = paste0('Source: ACLED<br>', dateRangeTitle()), align = 'left') %>%
+        hc_add_series_map(
+          map = africageojson,
+          df = vioRegionMapData(),
+          value = "value",
+          joinBy = c("iso-a3", "iso3"),
+          name = "Violent Events",
+          dataLabels = list(enabled = TRUE),
+          states = list(hover = list(color = '#a4edba'))
+        ) %>%
+        hc_colorAxis(visible=FALSE) %>%
+        hc_plotOptions(map = list(borderColor = "#000000", borderWidth = 0.1)) %>%
+        hc_mapNavigation(
+          enabled = TRUE,
+          enableMouseWheelZoom = FALSE,
+          enableDoubleClickZoom = TRUE,
+          buttonOptions = list(verticalAlign = 'bottom')
+        )
+    })
+    
+    # Build the time series chart for the demonstration data
+    output$vioRegionTimeCount <- renderHighchart({
+      highchart(type = 'stock') %>%
+        hc_chart(type = "column", backgroundColor='#FFFFFF') %>%
+        hc_title(text = 'Count of Violent Events by Time Period', align = 'left', margin = 50) %>%
+        hc_subtitle(text = paste0('Source: ACLED<br>', dateRangeTitle()), align = 'left') %>%
+        hc_xAxis(type = 'datetime') %>%
+        hc_plotOptions(series = list(pointStart = datetime_to_timestamp(as.Date(min(vioRegionTSData()[3][[1]]$data, na.rm=TRUE))), pointIntervalUnit = vioRegionPeriodOther(), pointInterval = vioRegionPeriodLength(), stacking='normal')) %>%
+        hc_yAxis(title = list(text = 'Violent Event Count', align = 'high'), opposite=FALSE) %>%
+        hc_add_series_list(vioRegionTSData()[c(1:2, 4)]) %>%
+        hc_legend(enabled = TRUE, align = 'left') %>%
+        hc_tooltip(shared = TRUE, crosshairs = TRUE)
+    })
+    
+    # Graph of the total number of demonstrations by event type
+    output$vioRegionTypeCount <- renderHighchart({
+      highchart() |> 
+        hc_chart(backgroundColor='#FFFFFF') |>
+        hc_add_series(vioRegionTypeData(), "bar", hcaes(x = event_type, y = count), name = "Event Counts") %>%
+        hc_xAxis(type = 'category', labels=list(useHTML = TRUE, format = '<div class="bar-label">{value}</div>')) %>%
+        hc_title(text = 'Count of Violent Events by Type', align = 'left', margin = 50) %>%
+        hc_subtitle(text = paste0('Source: ACLED<br>', dateRangeTitle()), align = 'left') %>%
+        hc_legend(enabled = FALSE)
+    })
+    
+    ##### 
+    # VEO Data and visualizations
+    # violent event data for veo by region
+    vioRegionVeoData <- reactive({
+      
+      data <- filteredVioRegionData() %>%
+        filter(!is.na(veo1) | !is.na(veo2)) %>%
+        arrange(desc(fdate)) %>%
+        complete(fdate = seq.Date(min(as.Date(fdate), na.rm = TRUE), max(as.Date(fdate), na.rm = TRUE), by = vioRegionPeriodValue())) %>%
+        group_by(fdate, event_type) %>%
+        summarise(n = n(), fatalities = sum(fatalities), deadly = sum(fatal)) %>% 
+        mutate(nondeadly = n - deadly) %>%
+        ungroup() %>%
+        complete(fdate, event_type, fill = list(n = 0, freq = 0)) %>%
+        group_by(fdate) %>%
+        mutate(n = ifelse(is.na(n), 0, n)) %>%
+        mutate(fatalities = ifelse(is.na(fatalities), 0, fatalities)) %>%
+        mutate(deadly = ifelse(is.na(deadly), 0, deadly)) %>%
+        mutate(nondeadly = ifelse(is.na(nondeadly), 0, nondeadly)) %>%
+        drop_na()
+      
+      data
+    })
+    
+    # Time series demonstration data for region
+    # Feeds demRegionTimeCount graph
+    vioRegionVeoTSData <- reactive({
+      
+      data <- vioRegionVeoData() %>%
+        subset(select = c('fdate', 'event_type', 'n')) %>%
+        pivot_wider(names_from = event_type, values_from = n) %>%
+        subset(select = c('fdate', 'Battles', 'Explosions/Remote violence', 'Violence against civilians')) %>%
+        gather() %>%
+        group_by(name = key) %>%
+        do(data = .$value)
+      
+      data <- list_parse(data)
+      
+      data
+    })
+    
+    # Categorical type demonstration data for region
+    # Feeds demRegionTypeCount graph
+    vioRegionVeoTypeData <- reactive({
+      
+      data <- vioRegionVeoData() %>%
+        group_by(event_type) %>%
+        summarise(count = sum(n))
+      
+      data
+    })
+    
+    vioRegionVeoMapData <- reactive({
+      data <- filteredVioRegionData() %>%
+        filter(!is.na(veo1) | !is.na(veo2)) %>%
+        group_by(iso3) %>%
+        summarise(value = n())
+      
+      data
+    })
+    
+    output$vioRegionVeoMap <- renderHighchart({
+      highchart() %>%
+        hc_chart(type = "map", backgroundColor='#FFFFFF') %>%
+        hc_title(text = 'Count of VEO Violent Events by Country', align = 'left', margin = 50) %>%
+        hc_subtitle(text = paste0('Source: ACLED<br>', dateRangeTitle()), align = 'left') %>%
+        hc_add_series_map(
+          map = africageojson,
+          df = vioRegionVeoMapData(),
+          value = "value",
+          joinBy = c("iso-a3", "iso3"),
+          name = "VEO Violent Events",
+          dataLabels = list(enabled = TRUE),
+          states = list(hover = list(color = '#a4edba'))
+        ) %>%
+        hc_colorAxis(visible=FALSE) %>%
+        hc_plotOptions(map = list(borderColor = "#000000", borderWidth = 0.1)) %>%
+        hc_mapNavigation(
+          enabled = TRUE,
+          enableMouseWheelZoom = FALSE,
+          enableDoubleClickZoom = TRUE,
+          buttonOptions = list(verticalAlign = 'bottom')
+        )
+    })
+    
+    # Build the time series chart for the demonstration data
+    output$vioRegionVeoTimeCount <- renderHighchart({
+      highchart(type = 'stock') %>%
+        hc_chart(type = "column", backgroundColor='#FFFFFF') %>%
+        hc_title(text = 'Count of VEO Violent Events by Time Period', align = 'left', margin = 50) %>%
+        hc_subtitle(text = paste0('Source: ACLED<br>', dateRangeTitle()), align = 'left') %>%
+        hc_xAxis(type = 'datetime') %>%
+        hc_plotOptions(series = list(pointStart = datetime_to_timestamp(as.Date(min(vioRegionVeoTSData()[3][[1]]$data, na.rm=TRUE))), pointIntervalUnit = vioRegionPeriodOther(), pointInterval = vioRegionPeriodLength(), stacking='normal')) %>%
+        hc_yAxis(title = list(text = 'VEO Violent Event Count', align = 'high'), opposite=FALSE) %>%
+        hc_add_series_list(vioRegionVeoTSData()[c(1:2, 4)]) %>%
+        hc_legend(enabled = TRUE, align = 'left') %>%
+        hc_tooltip(shared = TRUE, crosshairs = TRUE)
+    })
+    
+    # Graph of the total number of demonstrations by event type
+    output$vioRegionVeoTypeCount <- renderHighchart({
+      highchart() |> 
+        hc_chart(backgroundColor='#FFFFFF') |>
+        hc_add_series(vioRegionVeoTypeData(), "bar", hcaes(x = event_type, y = count), name = "VEO Event Counts") %>%
+        hc_xAxis(type = 'category', labels=list(useHTML = TRUE, format = '<div class="bar-label">{value}</div>')) %>%
+        hc_title(text = 'Count of VEO Violent Events by Type', align = 'left', margin = 50) %>%
+        hc_subtitle(text = paste0('Source: ACLED<br>', dateRangeTitle()), align = 'left') %>%
+        hc_legend(enabled = FALSE)
+    })
+    
+#####
+# Demonstrations by Region
+    # Populate the region dropdown based on the value of the group dropdown
+    demRegionDDData <- reactive({
+      req(input$demRegionGroupSelector)
+      
+      regionGroupQuery <- sqlInterpolate(ANSI(),
+                                         "SELECT DISTINCT ?params FROM iso.region ORDER BY ?params;",
+                                         params = SQL(input$demRegionGroupSelector)
+      )
+      
+      df <- DBI::dbGetQuery(con, regionGroupQuery)
+      
+      df <- as.data.frame(df)
+      
+      df[1]
+    })
+    
+    # Use the output from the previous step to update the region selectInput
+    observe({
+      
+      x <- demRegionDDData()
+      
+      updateSelectInput(session, "demRegionSelector",
+                        label = "Region:",
+                        choices = x
+      )
+    })
+    
+    # Use the group and region dropdown values to extract data from the database
+    demRegionDf <- reactive({
+      req(input$demRegionSelector)
+      
+      demRegionQuery <- sqlInterpolate(ANSI(),
+                                       "SELECT * FROM acled.acled_master WHERE event = 'Demonstration' AND ?cat = ?params;",
+                                       cat = SQL(input$demRegionGroupSelector),
+                                       params = dbQuoteString(ANSI(), input$demRegionSelector)
+      )
+      
+      df <- DBI::dbGetQuery(con, demRegionQuery)
+      
+      df
+    })
+    
+    # Update the minimum and maximum dates for the date selector
+    observe({
+      
+      demRegionDfMin <- min(demRegionDf()$date, na.rm = TRUE)
+      demRegionDfMax <- max(demRegionDf()$date, na.rm = TRUE)
+      
+      output$demRegionDateTimeUI <- renderUI({
+        dateRangeInput("demRegionDaterange", "Date Range:",
+                       start = demRegionDfMin,
+                       end = demRegionDfMax,
+                       min = demRegionDfMin,
+                       max = demRegionDfMax,
+                       format = "yyyy-mm-dd",
+                       separator = " to "
+        )
+      })
+    })
+    
+    # Set the initial values for the period lengths and values for the highcharts time scale x-axis
+    demRegionPeriodLength <- reactiveVal(1)
+    demRegionPeriodValue <- reactiveVal('year')
+    demRegionPeriodOther <- reactiveVal('year')
+    
+    # Set the period length for each period used in the highcharts time scale
+    observeEvent(input$demRegionPeriodSelector, {
+      if (input$demRegionPeriodSelector == 'day') {
+        demRegionPeriodLength(1)
+      } else if (input$demRegionPeriodSelector == 'week') {
+        demRegionPeriodLength(7)
+      } else if (input$demRegionPeriodSelector == 'month') {
+        demRegionPeriodLength(1)
+      } else if (input$demRegionPeriodSelector == 'quarter') {
+        demRegionPeriodLength(3)
+      } else if (input$demRegionPeriodSelector == 'year') {
+        demRegionPeriodLength(1)
+      }
+    })
+    
+    # Sets the period value based on the dropdown selection
+    observeEvent(input$demRegionPeriodSelector, {
+      demRegionPeriodValue(input$demRegionPeriodSelector)
+    })
+    
+    # Changes the period value to a value that can be used by highcharts
+    observeEvent(input$demRegionPeriodSelector, {
+      if (input$demRegionPeriodSelector == 'day') {
+        demRegionPeriodOther('day')
+      } else if (input$demRegionPeriodSelector == 'week') {
+        demRegionPeriodOther('day')
+      } else if (input$demRegionPeriodSelector == 'month') {
+        demRegionPeriodOther('month')
+      } else if (input$demRegionPeriodSelector == 'quarter') {
+        demRegionPeriodOther('month')
+      } else if (input$demRegionPeriodSelector == 'year') {
+        demRegionPeriodOther('year')
+      }
+    })
+    
+    # Filters the data to use the period values. This changes the time period of the graphs
+    filteredDemRegionData <- reactive({
+      req(input$demRegionDaterange)
+      
+      results <- demRegionDf()
+      
+      # Sets a new column 'fdate' that is used to aggregate the data based on date ranges
+      results$fdate <- as.Date(floor_date(results$date, unit = demRegionPeriodValue()))
+      
+      # Creates a new column to denote if a fatality occured at the event
+      results$fatal <- ifelse(results$fatalities > 0, 1, 0)
+      
+      # Filters the data to only include dates between the selected minimum and maximum
+      results <- results %>%
+        filter(date >= input$demRegionDaterange[1] & date <= input$demRegionDaterange[2])
+      
+      results
+    })
+    
+    dateRangeTitle <- reactive({
+      mnd <- input$demRegionDaterange[1]
+      mxd <- input$demRegionDaterange[2]
+      drt <- paste('Dates Included:', mnd, 'to', mxd)
+      drt
+    })
+    
+    ##### Demonstrations Overview
+    # Original demonstration data for region
+    demRegionData <- reactive({
+      
+      data <- filteredDemRegionData() %>%
+        arrange(desc(fdate)) %>%
+        complete(fdate = seq.Date(min(as.Date(fdate), na.rm = TRUE), max(as.Date(fdate), na.rm = TRUE), by = demRegionPeriodValue())) %>%
+        group_by(fdate, event_type) %>%
+        summarise(n = n(), fat = sum(fatalities), fat_events = sum(fatal)) %>% 
+        ungroup() %>%
+        complete(fdate, event_type, fill = list(n = 0, freq = 0)) %>%
+        group_by(fdate) %>%
+        mutate(n = ifelse(is.na(n), 0, n)) %>%
+        drop_na()
+      
+      data
+    })
+    
+    # Time series demonstration data for region
+    # Feeds demRegionTimeCount graph
+    demRegionTSData <- reactive({
+      
+      data <- demRegionData() %>%
+        subset(select = c('fdate', 'event_type', 'n')) %>%
+        pivot_wider(names_from = event_type, values_from = n) %>%
+        subset(select = c('fdate', 'Protests', 'Riots')) %>%
+        gather() %>%
+        group_by(name = key) %>%
+        do(data = .$value)
+      
+      data <- list_parse(data)
+      
+      data
+    })
+    
+    # Categorical type demonstration data for region
+    # Feeds demRegionTypeCount graph
+    demRegionTypeData <- reactive({
+      
+      data <- demRegionData() %>%
+        group_by(event_type) %>%
+        summarise(count = sum(n))
+      
+      data
+    })
+    
+    demRegionMapData <- reactive({
+      data <- filteredDemRegionData() %>%
+        group_by(iso3) %>%
+        summarise(value = n())
+      
+      data
+    })
+    
+    hcoptslang <- getOption("highcharter.lang")
+    hcoptslang$thousandsSep <- ","
+    options(highcharter.lang = hcoptslang)
+    
+    getContent <- function(url) {
+      library(httr)
+      content(GET(url))
+    }
+    
+    africageojson <- getContent("https://code.highcharts.com/mapdata/custom/africa.geo.json")
+    
+    output$demRegionMap <- renderHighchart({
+      highchart() %>%
+        hc_chart(type = "map", backgroundColor='#FFFFFF') %>%
+        hc_title(text = 'Count of Demonstrations by Country', align = 'left', margin = 50) %>%
+        hc_subtitle(text = paste0('Source: ACLED<br>', dateRangeTitle()), align = 'left') %>%
+        hc_add_series_map(
+          map = africageojson,
+          df = demRegionMapData(),
+          value = "value",
+          joinBy = c("iso-a3", "iso3"),
+          name = "Demonstrations",
+          dataLabels = list(enabled = TRUE),
+          states = list(hover = list(color = '#a4edba'))
+        ) %>%
+        hc_colorAxis(visible=FALSE) %>%
+        hc_plotOptions(map = list(borderColor = "#000000", borderWidth = 0.1)) %>%
+        hc_mapNavigation(
+          enabled = TRUE,
+          enableMouseWheelZoom = FALSE,
+          enableDoubleClickZoom = TRUE,
+          buttonOptions = list(verticalAlign = 'bottom')
+        )
+    })
+    
+    # Build the time series chart for the demonstration data
+    output$demRegionTimeCount <- renderHighchart({
+      highchart(type = 'stock') %>%
+        hc_chart(type = "column", backgroundColor='#FFFFFF') %>%
+        hc_title(text = 'Count of Demonstrations by Time Period', align = 'left', margin = 50) %>%
+        hc_subtitle(text = paste0('Source: ACLED<br>', dateRangeTitle()), align = 'left') %>%
+        hc_xAxis(type = 'datetime') %>%
+        hc_plotOptions(series = list(pointStart = datetime_to_timestamp(as.Date(min(demRegionTSData()[1][[1]]$data, na.rm=TRUE))), pointIntervalUnit = demRegionPeriodOther(), pointInterval = demRegionPeriodLength(), stacking='normal')) %>%
+        hc_yAxis(title = list(text = 'Demonstration Count', align = 'high'), opposite=FALSE) %>%
+        hc_add_series_list(demRegionTSData()[2:3]) %>%
+        hc_legend(enabled = TRUE, align = 'left') %>%
+        hc_tooltip(shared = TRUE, crosshairs = TRUE)
+    })
+    
+    # Graph of the total number of demonstrations by event type
+    output$demRegionTypeCount <- renderHighchart({
+      highchart() |> 
+        hc_chart(backgroundColor='#FFFFFF') |>
+        hc_add_series(demRegionTypeData(), "bar", hcaes(x = event_type, y = count), name = "Event Counts") %>%
+        hc_xAxis(type = 'category', labels=list(useHTML = TRUE, format = '<div class="bar-label">{value}</div>')) %>%
+        hc_title(text = 'Count of Demonstrations by Type', align = 'left', margin = 50) %>%
+        hc_subtitle(text = paste0('Source: ACLED<br>', dateRangeTitle()), align = 'left') %>%
+        hc_legend(enabled = FALSE)
+    })
+    
+    
+    # Original demonstration data for region
+    protestRegionData <- reactive({
+      
+      data <- filteredDemRegionData() %>%
+        filter(event_type == 'Protests') %>%
+        arrange(desc(fdate)) %>%
+        complete(fdate = seq.Date(min(as.Date(fdate), na.rm = TRUE), max(as.Date(fdate), na.rm = TRUE), by = demRegionPeriodValue())) %>%
+        group_by(fdate, sub_event_type) %>%
+        summarise(n = n(), fatalities = sum(fatalities), deadly = sum(fatal)) %>% 
+        mutate(nondeadly = n - deadly) %>% 
+        ungroup() %>%
+        complete(fdate, sub_event_type, fill = list(n = 0, freq = 0)) %>%
+        group_by(fdate) %>%
+        mutate(n = ifelse(is.na(n), 0, n)) %>%
+        mutate(fatalities = ifelse(is.na(fatalities), 0, fatalities)) %>%
+        mutate(deadly = ifelse(is.na(deadly), 0, deadly)) %>%
+        mutate(nondeadly = ifelse(is.na(nondeadly), 0, nondeadly)) %>%
+        drop_na() %>%
+        mutate(percent = case_when(n > 0 ~ round(deadly/n, digits=4) * 100, n == 0 ~ 0))
+      
+      data
+    })
+    
+    # Time series protest data for region
+    # Feeds protestRegionTimeCount graph
+    protestRegionTSData <- reactive({
+      
+      data <- protestRegionData() %>%
+        subset(select = c('fdate', 'sub_event_type', 'n')) %>%
+        pivot_wider(names_from = sub_event_type, values_from = n) %>%
+        subset(select = c('fdate', 'Peaceful protest', 'Protest with intervention', 'Excessive force against protesters')) %>%
+        gather() %>%
+        group_by(name = key) %>%
+        do(data = .$value)
+      
+      data <- list_parse(data)
+      
+      data
+    })
+    
+    # Categorical protest data by type for region
+    # Feeds proRegionTypeCount graph
+    protestRegionTypeData <- reactive({
+      
+      data <- protestRegionData() %>%
+        group_by(sub_event_type) %>%
+        summarise(nondeadly = sum(nondeadly), deadly = sum(deadly))
+      
+      data <- as.data.frame(data)
+      row.names(data) <- data$sub_event_type
+      data <- data[c('nondeadly', 'deadly')]
+      
+      data
+    })
+    
+    protestRegionFatalData <- reactive({
+      
+      data <- protestRegionData() %>%
+        subset(select = c(fdate, n, fatalities, deadly)) %>%
+        group_by(fdate) %>%
+        summarize(n = sum(n), fatalties = sum(fatalities), deadly = sum(deadly)) %>%
+        mutate(percent = case_when(n > 0 ~ round(deadly/n, digits=4) * 100, n == 0 ~ 0)) %>%
+        gather() %>%
+        group_by(name = key) %>%
+        do(data = .$value)
+      
+      data <- list_parse(data)
+      
+      data
+    })
+    
+    output$protestRegionTypeCount <- renderHighchart({
+      highchart() |> 
+        hc_chart(type = "bar", backgroundColor='#FFFFFF') %>%
+        hc_xAxis(type = 'category', categories = row.names(protestRegionTypeData()), labels=list(useHTML = TRUE, format = '<div class="bar-label">{value}</div>')) %>%
+        hc_title(text = 'Count of Protests', align = 'left', margin = 50) %>%
+        hc_subtitle(text = paste0('Source: ACLED<br>', dateRangeTitle()), align = 'left') %>%
+        hc_plotOptions(series = list(stacking='normal')) %>%
+        hc_legend(align='left') %>%
+        hc_add_series(protestRegionTypeData()$deadly, name='Deadly') %>%
+        hc_add_series(protestRegionTypeData()$nondeadly, name='Non-Deadly')
+    })
+    
+    output$protestRegionTimeCount <- renderHighchart({
+      highchart(type = 'stock') %>%
+        hc_chart(type = "column", backgroundColor='#FFFFFF') %>%
+        hc_title(text = 'Count of Protests by Time Period', align = 'left', margin = 50) %>%
+        hc_subtitle(text = paste0('Source: ACLED<br>', dateRangeTitle()), align = 'left') %>%
+        hc_xAxis(type = 'datetime') %>%
+        hc_plotOptions(series = list(pointStart = datetime_to_timestamp(as.Date(min(protestRegionTSData()[2][[1]]$data, na.rm = TRUE))), pointIntervalUnit = demRegionPeriodOther(), pointInterval = demRegionPeriodLength(), stacking='normal')) %>%
+        hc_yAxis(title = list(text = 'Protest Count', align = 'high'), opposite=FALSE) %>%
+        hc_add_series_list(protestRegionTSData()[c(1, 3, 4)]) %>%
+        hc_legend(enabled = TRUE, align = 'left') %>%
+        hc_tooltip(shared = TRUE, crosshairs = TRUE)
+    })
+    
+    output$protestRegionFatalPercent <- renderHighchart({
+      highchart(type = 'stock') %>%
+        hc_chart(type = "column", backgroundColor='#FFFFFF') %>%
+        hc_title(text = 'Percentage of Protests Resulting in Death by Time Period', align = 'left', margin = 50) %>%
+        hc_subtitle(text = paste0('Source: ACLED<br>', dateRangeTitle()), align = 'left') %>%
+        hc_xAxis(type = 'datetime') %>%
+        hc_plotOptions(series = list(pointStart = datetime_to_timestamp(as.Date(min(protestRegionFatalData()[3][[1]]$data, na.rm = TRUE))), pointIntervalUnit = demRegionPeriodOther(), pointInterval = demRegionPeriodLength(), stacking='normal')) %>%
+        hc_yAxis(title = list(text = 'Percentage of Protests', align = 'high'), opposite=FALSE) %>%
+        hc_add_series_list(protestRegionFatalData()[5]) %>%
+        hc_legend(enabled = FALSE, align = 'left') %>%
+        hc_tooltip(shared = TRUE, crosshairs = TRUE, pointFormat = 'Percentage Resulting in Death: {point.y}')
+    })
+    
+    output$protestRegionFatalCount <- renderHighchart({
+      highchart(type = 'stock') %>%
+        hc_chart(type = "column", backgroundColor='#FFFFFF') %>%
+        hc_title(text = 'Count of Deaths from Protests by Time Period', align = 'left', margin = 50) %>%
+        hc_subtitle(text = paste0('Source: ACLED<br>', dateRangeTitle()), align = 'left') %>%
+        hc_xAxis(type = 'datetime') %>%
+        hc_plotOptions(series = list(pointStart = datetime_to_timestamp(as.Date(min(protestRegionFatalData()[3][[1]]$data, na.rm = TRUE))), pointIntervalUnit = demRegionPeriodOther(), pointInterval = demRegionPeriodLength(), stacking='normal')) %>%
+        hc_yAxis(title = list(text = 'Count of Deaths', align = 'high'), opposite=FALSE) %>%
+        hc_add_series_list(protestRegionFatalData()[2]) %>%
+        hc_legend(enabled = FALSE, align = 'left') %>%
+        hc_tooltip(shared = TRUE, crosshairs = TRUE, pointFormat = 'Death Count: {point.y}')
+    })
+    
+    # Original riot data for region
+    riotRegionData <- reactive({
+      
+      data <- filteredDemRegionData() %>%
+        filter(event_type == 'Riots') %>%
+        arrange(desc(fdate)) %>%
+        complete(fdate = seq.Date(min(as.Date(fdate), na.rm = TRUE), max(as.Date(fdate), na.rm = TRUE), by = demRegionPeriodValue())) %>%
+        group_by(fdate, sub_event_type) %>%
+        summarise(n = n(), fatalities = sum(fatalities), deadly = sum(fatal)) %>% 
+        mutate(nondeadly = n - deadly) %>%
+        ungroup() %>%
+        complete(fdate, sub_event_type, fill = list(n = 0, freq = 0)) %>%
+        group_by(fdate) %>%
+        mutate(n = ifelse(is.na(n), 0, n)) %>%
+        mutate(fatalities = ifelse(is.na(fatalities), 0, fatalities)) %>%
+        mutate(deadly = ifelse(is.na(deadly), 0, deadly)) %>%
+        mutate(nondeadly = ifelse(is.na(nondeadly), 0, nondeadly)) %>%
+        drop_na() %>%
+        mutate(percent = case_when(n > 0 ~ round(deadly/n, digits=4) * 100, n == 0 ~ 0))
+      
+      data
+    })
+    
+    # Time series riot data for region
+    # Feeds riotRegionTimeCount graph
+    riotRegionTSData <- reactive({
+      
+      data <- riotRegionData() %>%
+        subset(select = c('fdate', 'sub_event_type', 'n')) %>%
+        pivot_wider(names_from = sub_event_type, values_from = n) %>%
+        subset(select = c('fdate', 'Violent demonstration', 'Mob violence')) %>%
+        gather() %>%
+        group_by(name = key) %>%
+        do(data = .$value)
+      
+      data <- list_parse(data)
+      
+      data
+    })
+    
+    # Categorical riot data by type for region
+    # Feeds riotRegionTypeCount graph
+    riotRegionTypeData <- reactive({
+      
+      data <- riotRegionData() %>%
+        group_by(sub_event_type) %>%
+        summarise(nondeadly = sum(nondeadly), deadly = sum(deadly))
+      
+      data <- as.data.frame(data)
+      row.names(data) <- data$sub_event_type
+      data <- data[c('nondeadly', 'deadly')]
+      
+      data
+    })
+    
+    riotRegionFatalCountData <- reactive({
+      
+      data <- riotRegionData() %>%
+        subset(select = c(fdate, n, fatalities, deadly)) %>%
+        group_by(fdate) %>%
+        summarize(n = sum(n), fatalties = sum(fatalities), deadly = sum(deadly)) %>%
+        mutate(percent = case_when(n > 0 ~ round(deadly/n, digits=4) * 100, n == 0 ~ 0)) %>%
+        gather() %>%
+        group_by(name = key) %>%
+        do(data = .$value)
+      
+      data <- list_parse(data)
+      
+      data
+    })
+    
+    output$riotRegionTimeCount <- renderHighchart({
+      highchart(type = 'stock') %>%
+        hc_chart(type = "column", backgroundColor='#FFFFFF') %>%
+        hc_title(text = 'Count of Riots by Time Period', align = 'left', margin = 50) %>%
+        hc_subtitle(text = paste0('Source: ACLED<br>', dateRangeTitle()), align = 'left') %>%
+        hc_xAxis(type = 'datetime') %>%
+        hc_plotOptions(series = list(pointStart = datetime_to_timestamp(as.Date(min(riotRegionTSData()[1][[1]]$data, na.rm = TRUE))), pointIntervalUnit = demRegionPeriodOther(), pointInterval = demRegionPeriodLength(), stacking='normal')) %>%
+        hc_yAxis(title = list(text = 'Riot Count', align = 'high'), opposite=FALSE) %>%
+        hc_add_series_list(riotRegionTSData()[2:3]) %>%
+        hc_legend(enabled = TRUE, align = 'left') %>%
+        hc_tooltip(shared = TRUE, crosshairs = TRUE)
+    })
+    
+    output$riotRegionTypeCount <- renderHighchart({
+      highchart() |> 
+        hc_chart(type = "bar", backgroundColor='#FFFFFF') %>%
+        hc_xAxis(type = 'category', categories = row.names(riotRegionTypeData()), labels=list(useHTML = TRUE, format = '<div class="bar-label">{value}</div>')) %>%
+        hc_title(text = 'Count of Riots', align = 'left', margin = 50) %>%
+        hc_subtitle(text = paste0('Source: ACLED<br>', dateRangeTitle()), align = 'left') %>%
+        hc_plotOptions(series = list(stacking='normal')) %>%
+        hc_legend(align='left') %>%
+        hc_add_series(riotRegionTypeData()$deadly, name='Deadly') %>%
+        hc_add_series(riotRegionTypeData()$nondeadly, name='Non-Deadly')
+    })
+    
+    output$riotRegionFatalPercent <- renderHighchart({
+      highchart(type = 'stock') %>%
+        hc_chart(type = "column", backgroundColor='#FFFFFF') %>%
+        hc_title(text = 'Percentage of Riots Resulting in Death by Time Period', align = 'left', margin = 50) %>%
+        hc_subtitle(text = paste0('Source: ACLED<br>', dateRangeTitle()), align = 'left') %>%
+        hc_xAxis(type = 'datetime') %>%
+        hc_plotOptions(series = list(pointStart = datetime_to_timestamp(as.Date(min(riotRegionFatalCountData()[3][[1]]$data, na.rm = TRUE))), pointIntervalUnit = demRegionPeriodOther(), pointInterval = demRegionPeriodLength(), stacking='normal')) %>%
+        hc_yAxis(title = list(text = 'Percentage of Riots', align = 'high'), opposite=FALSE) %>%
+        hc_add_series_list(riotRegionFatalCountData()[5]) %>%
+        hc_legend(enabled = FALSE, align = 'left') %>%
+        hc_tooltip(shared = TRUE, crosshairs = TRUE, pointFormat = 'Percentage Resulting in Death: {point.y}')
+    })
+    
+    output$riotRegionFatalCount <- renderHighchart({
+      highchart(type = 'stock') %>%
+        hc_chart(type = "column", backgroundColor='#FFFFFF') %>%
+        hc_title(text = 'Count of Deaths from Riots by Time Period', align = 'left', margin = 50) %>%
+        hc_subtitle(text = paste0('Source: ACLED<br>', dateRangeTitle()), align = 'left') %>%
+        hc_xAxis(type = 'datetime') %>%
+        hc_plotOptions(series = list(pointStart = datetime_to_timestamp(as.Date(min(riotRegionFatalCountData()[3][[1]]$data, na.rm = TRUE))), pointIntervalUnit = demRegionPeriodOther(), pointInterval = demRegionPeriodLength(), stacking='normal')) %>%
+        hc_yAxis(title = list(text = 'Count of Fatalities', align = 'high'), opposite=FALSE) %>%
+        hc_add_series_list(riotRegionFatalCountData()[2]) %>%
+        hc_legend(enabled = FALSE, align = 'left') %>%
+        hc_tooltip(shared = TRUE, crosshairs = TRUE, pointFormat = 'Death Count: {point.y}')
+    })
+    
 }
 
 # Run the application 
